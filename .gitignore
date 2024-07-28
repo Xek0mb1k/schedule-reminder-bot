@@ -1,0 +1,6 @@
+config.ini
+sheet.xlsx
+/.idea
+/__pycache__
+.~lock.sheet.xlsx#
+loadfile_example.py
