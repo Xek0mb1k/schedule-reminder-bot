@@ -1,5 +1,5 @@
 config.ini
 sheet.xlsx
-downloaded_file.xlsx
-.idea
+/.idea
+/__pycache__
 .~lock.sheet.xlsx#

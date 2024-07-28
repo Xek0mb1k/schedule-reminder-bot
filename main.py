@@ -1,8 +1,6 @@
 import configparser
-
-import openpyxl.worksheet.worksheet
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, JobQueue
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from openpyxl import load_workbook
 from datetime import datetime
 import requests
@@ -11,11 +9,16 @@ import sheet_reader
 
 employee_queue = []
 reminder_time = "21:40"
-job_queue: JobQueue = None
 
 
 async def help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('HI, Im work')
+    await update.message.reply_text('''/set - set all reminders and load data from sheet
+    
+/today - view who today
+/tomorrow - view who tomorrow
+
+/download - download to server actual sheet
+        ''')
 
 
 async def download_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -32,7 +35,6 @@ async def set_reminders(
 ):
     global employee_queue
     global reminder_time
-    global job_queue
 
     # loading data from excel
     wb = load_workbook("sheet.xlsx", read_only=True)
@@ -41,24 +43,37 @@ async def set_reminders(
     current_time = datetime.now()
     employee_queue = sheet_reader.update_employee_queue(ws)
 
-    await job_queue.stop()
+    await context.job_queue.stop()
 
     alarm_hour, alarm_minute = map(int, reminder_time.split(':'))
-    reminder_datetime = datetime(current_time.year, current_time.month, current_time.day, 0, 0)
+    reminder_datetime = datetime(current_time.year, current_time.month, current_time.day, current_time.hour,
+                                 current_time.minute)
     for day in range(current_time.day, len(employee_queue)):
         print(day)
 
         if len(employee_queue[day]) != 0:
             remind_day = datetime(current_time.year, current_time.month, day, alarm_hour, alarm_minute)
             print("time remeaning: " + str((remind_day.timestamp() - reminder_datetime.timestamp())))
-            job_queue.run_once(remind, chat_id=update.message.chat_id, when=remind_day.timestamp() - reminder_datetime.timestamp())
+            context.job_queue.run_once(remind, chat_id=update.effective_message.chat_id,
+                                       when=remind_day.timestamp() - reminder_datetime.timestamp())
     print(employee_queue)
-    await job_queue.start()
+    await context.job_queue.start()
     await update.message.reply_text(f'Напоминалки установлены')
 
 
-async def remind(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Завтра работают... ' + '\n'.join(employee_queue[datetime.now().day]))
+async def remind(context: ContextTypes.DEFAULT_TYPE) -> None:
+    if datetime.now().day <= len(employee_queue):
+        await context.bot.send_message(context.job.chat_id,
+                                       'Завтра работают: \n' + '\n'.join(employee_queue[datetime.now().day]))
+    else:
+        await context.bot.send_message(context.job.chat_id, 'Произошла ошибка. Время обновить таблицу')
+
+
+async def who_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if datetime.now().day <= len(employee_queue):
+        await update.message.reply_text('Сегодня работают: \n' + '\n'.join(employee_queue[datetime.now().day - 1]))
+    else:
+        await update.message.reply_text('Ошибка. Время обновить таблицу')
 
 
 async def who_tomorrow(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -90,12 +105,8 @@ async def download_actual_sheet(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 def main():
-    global job_queue
-
     now = datetime.now()
     print(now)
-
-
 
     # reading configs
     config = configparser.ConfigParser()
@@ -110,6 +121,7 @@ def main():
 
     app.add_handler(CommandHandler("help", help))
     app.add_handler(CommandHandler("set", set_reminders))
+    app.add_handler(CommandHandler("today", who_today))
     app.add_handler(CommandHandler("tomorrow", who_tomorrow))
     app.add_handler(CommandHandler("download", download_actual_sheet))
 
